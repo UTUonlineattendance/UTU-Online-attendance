@@ -1,0 +1,1759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UTU - Smart Attendance (Firebase)</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- QR Code Library -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    
+    <!-- PDF Generation Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh; margin: 0; color: #333;
+            user-select: none; -webkit-tap-highlight-color: transparent;
+        }
+
+        input, select, textarea { user-select: text; cursor: text; }
+        button { cursor: pointer; }
+
+        /* Toast Notification */
+        .toast-notification {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            background-color: #333; color: white; padding: 12px 24px; border-radius: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10000; font-size: 14px;
+            opacity: 0; transition: opacity 0.3s, transform 0.3s; display: flex; align-items: center; gap: 10px;
+            pointer-events: none;
+        }
+        .toast-notification.show { opacity: 1; transform: translateX(-50%) translateY(10px); }
+        .toast-success { background-color: #28a745; }
+        .toast-warning { background-color: #f0ad4e; color: #333; }
+
+        /* Containers */
+        .container-box {
+            width: 380px; background: white; border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12); overflow: hidden;
+            display: none; margin: 10px; position: relative; animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .header {
+            background: linear-gradient(135deg, #337ab7, #2c5f8e); color: white;
+            padding: 16px; font-size: 16px; font-weight: 600; display: flex; justify-content: space-between; align-items: center;
+        }
+        .body-content { padding: 20px; text-align: center; }
+        .logo-img { max-width: 120px; height: auto; margin: 0 auto 20px auto; display: block; pointer-events: none; }
+
+        /* Forms */
+        .form-control { border: 1px solid #ddd; padding: 12px; width: 100%; outline: none; font-size: 14px; border-radius: 8px; box-sizing: border-box; margin-bottom: 12px; background: #fdfdfd; }
+        .form-control:focus { border-color: #337ab7; background: white; }
+        .btn { width: 100%; padding: 12px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; margin-top: 8px; border: none; color: white; transition: 0.2s; }
+        .btn:disabled { background-color: #ccc !important; cursor: not-allowed; }
+        
+        .btn-primary { background-color: #337ab7; } .btn-success { background-color: #28a745; } .btn-danger { background-color: #d9534f; }
+        .btn-warning { background-color: #f0ad4e; } .btn-info { background-color: #17a2b8; } .btn-purple { background-color: #6f42c1; } .btn-dark { background-color: #343a40; }
+        .icon-btn { background: none; border: none; color: white; cursor: pointer; font-size: 18px; }
+
+        /* Form Attendance Styles */
+        .student-circle-img {
+            width: 120px; height: 120px; border-radius: 50%; object-fit: cover;
+            border: 3px solid #337ab7; margin: 0 auto 15px auto; display: block; background: #eee;
+        }
+        .form-att-controls { display: flex; justify-content: center; gap: 15px; margin-top: 20px; align-items: center; }
+        .att-btn {
+            width: 60px; height: 60px; border-radius: 50%; border: none; color: white; font-weight: bold; font-size: 14px;
+            display: flex; align-items: center; justify-content: center; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .att-btn.present { background-color: #28a745; } 
+        .att-btn.absent { background-color: #d9534f; }
+        .att-btn.active { background-color: #888 !important; transform: scale(0.95); box-shadow: inset 0 3px 5px rgba(0,0,0,0.2); }
+
+        .att-nav-btn { background: #eee; color: #333; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid #ccc; }
+        
+        /* Lists & Tags */
+        .list-container { max-height: 250px; overflow-y: auto; margin-top: 10px; text-align: left; border: 1px solid #eee; border-radius: 8px; }
+        .list-item { padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+        .list-item:hover { background-color: #f8f9fa; }
+        .role-card { background: white; border: 1px solid #eee; padding: 15px; border-radius: 8px; margin-bottom: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        
+        .tag-container { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+        .tag { background: #e3f2fd; color: #337ab7; padding: 6px 10px; border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 8px; border: 1px solid #bbdefb; }
+        .tag i { cursor: pointer; color: #d9534f; }
+
+        /* Toggles */
+        .switch-wrapper { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px; border: 1px solid #eee; border-radius: 8px; }
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #337ab7; } input:checked + .slider:before { transform: translateX(20px); }
+
+        /* Scanner */
+        .scanner-svg-btn { background: white; border: 2px dashed #337ab7; border-radius: 12px; padding: 20px; cursor: pointer; color: #337ab7; display: flex; flex-direction: column; align-items: center; margin: 15px 0; }
+        .scanner-svg-btn.disabled { border-color: #ccc; color: #ccc; cursor: not-allowed; pointer-events: none; }
+        .scanner-svg-btn svg { width: 40px; height: 40px; fill: currentColor; margin-bottom: 10px; }
+        #reader, #facReader { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* Faculty QR Design */
+        .qr-controls { display: flex; justify-content: center; gap: 15px; margin-top: 20px; }
+        .svg-btn { background: white; border: 1px solid #eee; cursor: pointer; color: #555; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 11px; width: 70px; height: 70px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .svg-btn svg { width: 24px; height: 24px; fill: currentColor; margin-bottom: 6px; }
+        .svg-btn.danger { color: #d9534f; border-color: #f5c6cb; }
+        .session-id-large { font-size: 24px; font-weight: bold; color: #337ab7; letter-spacing: 1px; }
+        .scan-code-bottom { font-family: monospace; font-size: 18px; color: #333; letter-spacing: 2px; background: #eee; padding: 5px 10px; border-radius: 4px; display: inline-block; margin-top: 10px;}
+        .live-count { background: #e8f5e9; color: #2e7d32; padding: 8px; border-radius: 8px; margin-top: 10px; font-weight: bold; font-size: 14px; }
+        
+        .hidden { display: none !important; }
+        .capital-input { text-transform: uppercase; }
+
+        /* Modals */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px); display: none; justify-content: center; align-items: center; z-index: 9999; }
+        .modal-content { background: white; width: 85%; max-width: 320px; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; animation: fadeIn 0.2s; position: relative; }
+        .modal-header { background: #f8f9fa; padding: 15px; font-weight: bold; display: flex; justify-content: space-between; }
+        .modal-body { padding: 20px; overflow-y: auto; text-align: center; }
+        .modal-footer { padding: 10px; display: flex; gap: 10px; justify-content: center; background: #fff; }
+
+        /* Custom Radio */
+        .radio-group { display: flex; gap: 10px; justify-content: center; margin-bottom: 15px; }
+        .radio-group label { background: #f0f2f5; padding: 8px 16px; border-radius: 20px; cursor: pointer; border: 1px solid #ddd; }
+        .radio-group input[type="radio"] { display: none; }
+        .radio-group input[type="radio"]:checked + label { background: #337ab7; color: white; border-color: #337ab7; }
+        
+        /* Bulk List Styles */
+        .bulk-item-exist { color: #28a745; font-weight: bold; }
+        .delete-icon-btn { cursor: pointer; width: 20px; height: 20px; fill: #d9534f; }
+
+        /* Powered By */
+        .powered-by-text { font-size: 11px; color: #888; margin-top: 20px; font-style: italic; }
+
+        /* New Scanner List Styles */
+        .scanner-list-container {
+            background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px;
+            height: 120px; overflow-y: auto; margin-top: 10px; padding: 5px;
+            text-align: left;
+        }
+        .scanned-entry {
+            padding: 5px 10px; border-bottom: 1px solid #eee; font-size: 13px;
+            display: flex; justify-content: space-between;
+        }
+        .last-scanned-box {
+            background: #333; color: #0f0; font-family: monospace;
+            padding: 8px; border-radius: 4px; margin-top: 10px; font-size: 14px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="toast" class="toast-notification"><i class="fa fa-info-circle"></i><span id="toastMsg">Notification</span></div>
+
+    <!-- 1. LOGIN -->
+    <div class="container-box" id="loginPage" style="display: block;">
+        <div class="header">UTU Attendance</div>
+        <div class="body-content">
+            <img id="mainLogo" src="https://upload.wikimedia.org/wikipedia/en/2/22/Uka_Tarsadia_University_Logo.png" alt="UTU" class="logo-img">
+            <input type="text" class="form-control" id="loginUser" placeholder="User ID / Enrollment" tabindex="1">
+            <input type="password" class="form-control" id="loginPass" placeholder="Password" tabindex="2">
+            <button class="btn btn-primary" onclick="window.attemptLogin()" tabindex="3">Sign In</button>
+            <div id="loginPoweredBy" class="powered-by-text">Powered by UTU</div>
+        </div>
+    </div>
+
+    <!-- 2. DASHBOARD -->
+    <div class="container-box" id="mainDashboard">
+        <div class="header">
+            <span id="dashTitle">Dashboard</span>
+            <button class="icon-btn" onclick="window.logout()"><i class="fa fa-sign-out-alt"></i></button>
+        </div>
+        <div class="body-content">
+            <!-- Faculty Info Button (Dynamic) -->
+            <button id="btnFacInfo" class="btn btn-warning" style="width:100%; margin-bottom:10px; display:none;" onclick="window.openFacultyInfoForm()">Update My Profile</button>
+            
+            <div id="facultySessionControls">
+                <button class="btn btn-primary" id="btnStartStandard" onclick="window.prepareAttendance()"><i class="fa fa-qrcode"></i> Start / Resume Session</button>
+                <button class="btn btn-dark hidden" id="btnStartReverse" onclick="window.prepareReverseScan()"><i class="fa fa-camera"></i> Scan Students</button>
+                <button class="btn btn-purple hidden" id="btnStartForm" onclick="window.prepareFormAttendance()"><i class="fa fa-clipboard-list"></i> Form Attendance</button>
+            </div>
+            <div id="adminControls" class="hidden">
+                <div style="display:flex; gap:10px; margin-top:10px;">
+                    <button class="btn btn-warning" onclick="window.openSubjectPage()">Subjects</button>
+                    <button class="btn btn-warning" onclick="window.openClassPage()">Classes</button>
+                </div>
+                <button class="btn btn-info" onclick="window.showPage('userRoleSelectionPage')"><i class="fa fa-users"></i> User Management</button>
+                <button class="btn btn-success" onclick="window.openBulkAddPage()"><i class="fa fa-layer-group"></i> Add Bulk Student</button>
+                <button class="btn btn-purple" onclick="window.openResourcesPage()"><i class="fa fa-calendar-alt"></i> Time Table</button>
+                <button class="btn btn-dark" onclick="window.openSettingsPage()"><i class="fa fa-cog"></i> Settings</button>
+            </div>
+            <button class="btn btn-success" onclick="window.openRecordsFilter()"><i class="fa fa-list"></i> View Records</button>
+        </div>
+    </div>
+
+    <!-- 3. SETTINGS -->
+    <div class="container-box" id="settingsPage">
+        <div class="header">Settings<button class="icon-btn" onclick="window.showPage('mainDashboard')"><i class="fa fa-arrow-left"></i></button></div>
+        <div class="body-content" style="text-align:left;">
+            <label>App Logo</label><input type="file" id="logoInput" class="form-control" accept="image/*" onchange="window.uploadLogo()">
+            
+            <label>PDF Header Logo</label><input type="file" id="pdfLogoInput" class="form-control" accept="image/*" onchange="window.uploadPdfLogo()">
+            
+            <hr><h5 style="margin-bottom:10px;">Modes</h5>
+            <div class="switch-wrapper"><span>Standard (Faculty QR)</span><label class="switch"><input type="checkbox" id="toggleStandard" onchange="window.saveConfig()"><span class="slider"></span></label></div>
+            <div class="switch-wrapper"><span>QR to Student (Reverse)</span><label class="switch"><input type="checkbox" id="toggleReverse" onchange="window.saveConfig()"><span class="slider"></span></label></div>
+            <div class="switch-wrapper"><span>Form Attendance</span><label class="switch"><input type="checkbox" id="toggleForm" onchange="window.saveConfig()"><span class="slider"></span></label></div>
+
+            <hr>
+            <label>Footer Text (Powered By)</label>
+            <input type="text" id="poweredByInput" class="form-control" placeholder="e.g. Powered by Admin">
+            <button class="btn btn-success" style="margin-top:5px;" onclick="window.saveConfig()">Save All Settings</button>
+        </div>
+    </div>
+
+    <!-- 4. SESSION SETUP -->
+    <div class="container-box" id="attendanceSetupPage">
+        <div class="header">Setup Session</div>
+        <div class="body-content">
+            <div style="text-align:left; font-size:12px; color:#666; margin-bottom:5px;">Resume</div>
+            <div style="display:flex; gap:5px; margin-bottom:20px;"><input type="text" id="resumeSessionId" class="form-control" placeholder="e.g. X105" style="margin:0;"><button class="btn btn-info" onclick="window.resumeSession()" style="margin:0; width:auto;">Resume</button></div>
+            <hr><div style="text-align:left; font-size:12px; color:#666; margin-bottom:5px;">Start New</div>
+            <select id="attSubSelect" class="form-control"></select><select id="attClassSelect" class="form-control"></select>
+            <button class="btn btn-primary" onclick="window.generateNewSession()">Start New</button><button class="btn btn-danger" onclick="window.showPage('mainDashboard')">Cancel</button>
+        </div>
+    </div>
+
+    <!-- 5. ACTIVE SESSION (QR) -->
+    <div class="container-box" id="qrPage">
+        <div class="header">Active Session</div>
+        <div class="body-content">
+            <div class="session-info-top" style="color:#666; font-size:12px;">Resume ID</div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                <div id="staticSessionId" class="session-id-large"></div>
+                <button class="icon-btn" style="color:#337ab7; width:auto; height:auto; padding:0;" onclick="window.copySessionId()">
+                    <svg style="width:20px; height:20px; fill:currentColor;" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                </button>
+            </div>
+            
+            <div style="font-size:13px; color:#555; margin-top:5px;" id="activeDetails"></div>
+            
+            <div style="background:#fff; border:2px dashed #ccc; padding:15px; border-radius:12px; margin:20px auto; width:140px; height:140px; display:flex; align-items:center; justify-content:center;">
+                <img id="qrImg" src="" alt="QR" width="130" height="130">
+            </div>
+            
+            <div class="scan-code-bottom" id="dynamicScanCode"></div>
+            <div class="live-count" id="livePresentCount">Present: 0</div>
+            
+            <div class="qr-controls">
+                <button class="svg-btn" onclick="window.openManualAttendanceModal()">
+                    <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>Manual
+                </button>
+                <button class="svg-btn" onclick="window.nextQrCode()">
+                    <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>Next
+                </button>
+                <button class="svg-btn danger" onclick="window.confirmEndSession('qr')">
+                    <svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>End
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. FORM ATTENDANCE -->
+    <div class="container-box" id="formSetupPage">
+        <div class="header">Form Setup<button class="icon-btn" onclick="window.showPage('mainDashboard')"><i class="fa fa-times"></i></button></div>
+        <div class="body-content">
+            <select id="formSubSelect" class="form-control"></select>
+            <select id="formClassSelect" class="form-control"></select>
+            <button class="btn btn-purple" onclick="window.startFormAttendance()">Start Form</button>
+        </div>
+    </div>
+    
+    <div class="container-box" id="formAttendancePage">
+        <div class="header">
+            <span>Form Attendance</span>
+            <button class="icon-btn" onclick="window.confirmCancelNotSave('form')"><i class="fa fa-times"></i></button>
+        </div>
+        <div class="body-content">
+            <div style="font-weight:bold; color:#337ab7; margin-bottom:5px;" id="formSessionDisplayId"></div>
+            <img id="formStudentImg" src="" class="student-circle-img" alt="Student">
+            <h3 id="formStudentEnroll" style="margin: 5px 0;"></h3>
+            <h4 id="formStudentName" style="margin: 0 0 15px 0; color:#555; text-transform: uppercase;"></h4>
+            
+            <div class="form-att-controls">
+                <button class="att-nav-btn" onclick="window.prevFormStudent()"><i class="fa fa-chevron-left"></i></button>
+                
+                <button id="btnFormPresent" class="att-btn present" onclick="window.markFormStatus('P')">P</button>
+                <button id="btnFormAbsent" class="att-btn absent" onclick="window.markFormStatus('A')">A</button>
+
+                <button id="btnFormNext" class="att-nav-btn hidden" onclick="window.nextFormStudent()"><i class="fa fa-chevron-right"></i></button>
+                <button id="btnFormSave" class="btn btn-success hidden" style="width: auto; height: 50px; border-radius: 25px;" onclick="window.confirmEndSession('form')">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. STUDENT PORTAL -->
+    <div class="container-box" id="studentPage">
+        <div class="header"><span>Student Portal</span><button class="icon-btn" onclick="window.logout()"><i class="fa fa-sign-out-alt"></i></button></div>
+        <div class="body-content">
+            <button id="btnStudentInfo" class="btn btn-warning" style="width:auto; float:right; padding:5px 10px; font-size:12px; display:none;" onclick="window.openStudentInfoForm()">Info</button>
+            <h3><span id="stuDisplayId"></span></h3><p style="color:#666;">Class: <span id="stuDisplayClass"></span></p>
+            <div class="scanner-svg-btn" id="studentScannerBtn" onclick="window.openStudentScanner()">
+                <svg viewBox="0 0 24 24"><path d="M3 5v4h2V5h4V3H5c-1.1 0-2 .9-2 2zm2 10H3v4c0 1.1.9 2 2 2h4v-2H5v-4zm14 4h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4zm0-16h-4v2h4v4h2V5c0-1.1-.9-2-2-2z"/><path d="M7 7h10v10H7z"/></svg>
+                <span style="font-weight:bold;">Tap to Scan QR</span>
+            </div>
+            <div class="scanner-svg-btn disabled" id="studentMyQrBtn" onclick="window.openStudentMyQR()">
+                <svg viewBox="0 0 24 24"><path d="M3 5v4h2V5h4V3H5c-1.1 0-2 .9-2 2zm2 10H3v4c0 1.1.9 2 2 2h4v-2H5v-4zm14 4h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4zm0-16h-4v2h4v4h2V5c0-1.1-.9-2-2-2z"/><path d="M18 13h-4v2h4v-2zm-6 4h-2v2h2v-2zm2-2h-2v2h2v-2zm2 2h-2v2h2v-2z"/></svg>
+                <span style="font-weight:bold;">Show My QR</span><span style="font-size:10px;">(Waiting for Faculty...)</span>
+            </div>
+            <button class="btn btn-info" onclick="window.viewTimeTable()">View Time Table</button>
+        </div>
+    </div>
+    
+    <!-- Student Info Form -->
+    <div class="container-box" id="studentInfoPage">
+        <div class="header">My Information</div>
+        <div class="body-content" style="text-align: left;">
+            <div style="text-align:center;">
+                <label for="stuInfoImgInput">
+                    <img id="stuInfoImgPreview" src="https://via.placeholder.com/120?text=Photo" class="student-circle-img" style="cursor:pointer;">
+                </label>
+                <input type="file" id="stuInfoImgInput" accept="image/*" class="hidden" onchange="window.previewStudentImg()">
+                <small>Tap image to change</small>
+            </div>
+            <label>Full Name</label>
+            <input type="text" id="stuInfoName" class="form-control capital-input" placeholder="FULL NAME">
+            <label>My Mobile</label>
+            <input type="number" id="stuInfoMobile" class="form-control" placeholder="10 digits">
+            <label>Parent Mobile</label>
+            <input type="number" id="stuInfoParentMobile" class="form-control" placeholder="10 digits">
+            <button class="btn btn-success" onclick="window.saveStudentInfo()">Save & Submit</button>
+        </div>
+    </div>
+
+    <!-- NEW: Faculty Info Form -->
+    <div class="container-box" id="facultyInfoPage">
+        <div class="header">Update Profile</div>
+        <div class="body-content" style="text-align: left;">
+            <div style="text-align:center;">
+                <label for="facInfoImgInput">
+                    <img id="facInfoImgPreview" src="https://via.placeholder.com/120?text=Photo" class="student-circle-img" style="cursor:pointer;">
+                </label>
+                <input type="file" id="facInfoImgInput" accept="image/*" class="hidden" onchange="window.previewFacultyImg()">
+                <small>Tap image to change</small>
+            </div>
+            <label>Full Name</label>
+            <input type="text" id="facInfoName" class="form-control capital-input" placeholder="FULL NAME">
+            <button class="btn btn-success" onclick="window.saveFacultyInfo()">Save & Update</button>
+        </div>
+    </div>
+
+    <!-- Student Scanner -->
+    <div class="container-box" id="studentScanPage">
+        <div class="header"><span>Scanning...</span><button class="icon-btn" onclick="window.closeStudentScanner()"><i class="fa fa-times"></i></button></div>
+        <div class="body-content" style="padding:0; background:black; position:relative; height:320px; display:flex; justify-content:center; align-items:center;">
+            <div id="reader"></div><div style="position:absolute; width:220px; height:220px; border:2px solid rgba(255,255,255,0.7); box-shadow:0 0 0 1000px rgba(0,0,0,0.5); pointer-events:none;"></div>
+        </div>
+        <div style="padding:15px; text-align:center; color:#666; font-size:12px;">Fit QR code inside the box</div>
+    </div>
+    <div class="container-box" id="studentSuccessPage">
+        <div class="header">Attendance Marked</div>
+        <div class="body-content">
+            <div class="success-checkmark"><i class="fa fa-check"></i></div><h2 style="color:#28a745; margin:10px 0;">I Attended!</h2>
+            <div style="margin:20px 0; background:#f9f9f9; padding:15px; border-radius:8px;"><p><strong>Session ID:</strong> <span id="successSessId"></span></p><p><strong>Type:</strong> <span id="successQrId"></span></p></div>
+            <button class="btn btn-primary" onclick="window.showPage('studentPage')">Done</button>
+        </div>
+    </div>
+    <div class="container-box" id="studentMyQrPage">
+        <div class="header">My QR<button class="icon-btn" onclick="window.showPage('studentPage')"><i class="fa fa-times"></i></button></div>
+        <div class="body-content"><h4>Scan me!</h4><div style="border:2px solid #ccc; padding:10px; display:inline-block; border-radius:10px;"><img id="studentPersonalQr" src="" width="200" height="200"></div><p style="font-weight:bold; font-size:18px; margin-top:10px;" id="stuQrEnroll"></p></div>
+    </div>
+
+    <!-- 8. FACULTY SCANNER (REVERSE) -->
+    <div class="container-box" id="facultyScannerPage">
+        <div class="header">Scan Students<button class="icon-btn" onclick="window.confirmCancelNotSave('reverse')"><i class="fa fa-times"></i></button></div>
+        <div class="body-content">
+            <!-- Resume ID Input -->
+            <div style="display:flex; gap:5px; margin-bottom:10px;">
+                <input type="text" id="revResumeId" class="form-control" placeholder="Resume ID (Optional)" style="margin:0;">
+                <button class="btn btn-info" onclick="window.startReverseScanning(true)" style="margin:0; width:auto;">Start/Resume</button>
+            </div>
+
+            <div style="margin-bottom:5px; font-weight:bold;" id="revSessInfo"></div>
+            
+            <div style="background:black; height:250px; border-radius:8px; overflow:hidden; position:relative;">
+                <div id="facReader" style="width:100%; height:100%;"></div>
+            </div>
+            
+            <!-- Last Scanned Code Display -->
+            <div class="last-scanned-box">Last: <span id="lastScan">Waiting...</span></div>
+
+            <!-- Scanned List -->
+            <div class="scanner-list-container" id="scannerList">
+                <!-- Items added dynamically -->
+            </div>
+
+            <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:12px; color:#666;">Scanned: <span id="tempRevCount">0</span></span>
+                <button class="btn btn-success" style="width:auto; padding:8px 15px;" onclick="window.confirmEndSession('reverse')">Finish</button>
+            </div>
+        </div>
+    </div>
+    <div class="container-box" id="reverseSetupPage">
+        <div class="header">Setup Scan<button class="icon-btn" onclick="window.showPage('mainDashboard')"><i class="fa fa-times"></i></button></div>
+        <div class="body-content">
+            <select id="revSubSelect" class="form-control"></select>
+            <select id="revClassSelect" class="form-control"></select>
+            <button class="btn btn-dark" onclick="window.startReverseScanning(false)">Open Scanner</button>
+        </div>
+    </div>
+
+    <!-- 9. USER MANAGEMENT -->
+    <div class="container-box" id="userRoleSelectionPage">
+        <div class="header">Manage Users<button class="icon-btn" onclick="window.showPage('mainDashboard')"><i class="fa fa-arrow-left"></i></button></div>
+        <div class="body-content">
+            <div class="role-card" onclick="window.openUserList('student')"><div><strong>Students</strong></div><i class="fa fa-chevron-right"></i></div>
+            <div class="role-card" onclick="window.openUserList('faculty')"><div><strong>Faculty</strong></div><i class="fa fa-chevron-right"></i></div>
+            <div class="role-card" onclick="window.openUserList('admin')"><div><strong>Admins</strong></div><i class="fa fa-chevron-right"></i></div>
+        </div>
+    </div>
+    <div class="container-box" id="userListPage">
+        <div class="header"><span id="userListTitle">Users</span><button class="icon-btn" onclick="window.backToRoleSelect()"><i class="fa fa-arrow-left"></i></button></div>
+        <div class="body-content"><button class="btn btn-success" id="btnAddUser" onclick="window.openEditUserModal(null)"><i class="fa fa-plus"></i> Add New</button><div id="userListContainer" style="margin-top:10px;"></div></div>
+    </div>
+    <div class="container-box" id="editUserPage">
+        <div class="header"><span id="editUserTitle">Add User</span><button class="icon-btn" onclick="window.backToUserList()"><i class="fa fa-times"></i></button></div>
+        <div class="body-content" style="text-align:left;">
+            <input type="hidden" id="editOriginalId"><label>User ID</label><input type="text" id="editUserId" class="form-control"><label>Password</label><input type="text" id="editUserPass" class="form-control">
+            <div id="editGeneralInputs"><label>Name</label><input type="text" id="editUserName" class="form-control capital-input"></div>
+
+            <div id="editStudentInputs" class="hidden">
+                <label>Class</label><select id="editClassSelect" class="form-control"></select>
+                <label>Student Name</label><input type="text" id="editStuName" class="form-control capital-input">
+                <label>Mobile</label><input type="text" id="editStuMob" class="form-control">
+                <label>Parent Mobile</label><input type="text" id="editStuParMob" class="form-control">
+            </div>
+            <div id="editFacultyInputs" class="hidden">
+                <label>Subjects</label>
+                <div class="tag-container" id="editSubTags"></div>
+                <input type="text" id="editSubSearch" class="form-control" placeholder="Search..." onkeyup="window.filterEditSubjectSearch()">
+                <div id="editSubResults" class="list-container" style="display:none; max-height:100px;"></div>
+            </div>
+            <button class="btn btn-success" onclick="window.saveUser()">Save Changes</button>
+        </div>
+    </div>
+    <div class="container-box" id="userDetailStatsPage">
+        <div class="header">Details<button class="icon-btn" onclick="window.backToUserList()"><i class="fa fa-arrow-left"></i></button></div>
+        <div class="body-content" style="text-align:left;">
+            <div style="text-align:center;">
+                <!-- ADMIN can click this label to change image -->
+                <label for="adminUserImgInput">
+                    <img id="detailUserImg" src="" class="student-circle-img" style="width:80px; height:80px; cursor:default;">
+                </label>
+                <!-- Hidden input for Admin -->
+                <input type="file" id="adminUserImgInput" class="hidden" onchange="window.changeUserImageByAdmin()" disabled>
+            </div>
+            <h3 id="detailUserId" style="text-align:center; margin:5px 0;"></h3>
+            <div id="detailExtraInfo" style="background:#f9f9f9; padding:10px; border-radius:8px; font-size:13px; margin-bottom:10px;"></div>
+            <div id="detailButtons" style="display:flex; gap:10px; margin-bottom:15px; flex-direction:column;">
+                <!-- Dynamic Buttons will be injected here -->
+            </div>
+            <div id="detailStatsContainer" style="display:none;"></div>
+        </div>
+    </div>
+
+    <!-- NEW: Bulk Add Page -->
+    <div class="container-box" id="bulkAddPage">
+        <div class="header">Add Bulk Student<button class="icon-btn" onclick="window.showPage('mainDashboard')"><i class="fa fa-times"></i></button></div>
+        <div class="body-content" style="text-align:left;">
+            <label>Class</label>
+            <select id="bulkClassSelect" class="form-control"></select>
+            
+            <label>Type (Enrollment Prefix)</label>
+            <input type="text" id="bulkTypeInput" class="form-control" placeholder="e.g. 2025021007100">
+            
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1;">
+                    <label>Range Start</label>
+                    <input type="number" id="bulkRangeStart" class="form-control" placeholder="01">
+                </div>
+                <div style="flex:1;">
+                    <label>Range End</label>
+                    <input type="number" id="bulkRangeEnd" class="form-control" placeholder="99">
+                </div>
+            </div>
+            
+            <button class="btn btn-info" onclick="window.previewBulkIds()">Preview</button>
+            <hr>
+            <div id="bulkPreviewList" class="list-container" style="height:200px;"></div>
+            <button class="btn btn-success" onclick="window.saveBulkUsers()">Save All</button>
+        </div>
+    </div>
+
+    <!-- Utils -->
+    <div class="container-box" id="recordsFilterPage">
+        <div class="header">Records<button class="icon-btn" onclick="window.showPage('mainDashboard')"><i class="fa fa-arrow-left"></i></button></div>
+        <div class="body-content">
+            <select id="recSubSelect" class="form-control"></select>
+            <!-- NEW: Class Select for Records -->
+            <select id="recClassSelect" class="form-control"></select>
+            <input type="date" id="recDateSelect" class="form-control">
+            <button class="btn btn-info" onclick="window.findRecordSessions()">Find</button>
+            <div id="sessionResultsList" class="list-container"></div>
+        </div>
+    </div>
+    <div class="container-box" id="recordsDetailPage">
+        <div class="header"><span id="recDetailTitle"></span>
+            <!-- PDF Button -->
+            <button class="icon-btn" onclick="window.openPdfOptions()"><i class="fa fa-file-pdf"></i></button>
+            <button class="icon-btn" onclick="window.showPage('recordsFilterPage')"><i class="fa fa-arrow-left"></i></button>
+        </div>
+        <div class="body-content"><div id="recStats" style="font-weight:bold;"></div><div id="detailedAttList" class="list-container"></div></div>
+    </div>
+    <div class="container-box" id="simpleListPage">
+        <div class="header"><span id="simpleListTitle"></span><button class="icon-btn" onclick="window.showPage('mainDashboard')"><i class="fa fa-times"></i></button></div>
+        <div class="body-content"><input type="text" id="simpleListInput" class="form-control"><button class="btn btn-success" id="simpleListBtn">Add</button><div id="simpleListContainer" class="list-container"></div></div>
+    </div>
+    <div class="container-box" id="resourcesPage">
+        <div class="header">Time Table<button class="icon-btn" onclick="window.showPage('mainDashboard')"><i class="fa fa-arrow-left"></i></button></div>
+        <div class="body-content">
+            <select id="ttClassSelect" class="form-control"></select>
+            <div class="radio-group">
+                <input type="radio" id="ttTypeImg" name="ttType" value="img" checked onclick="window.toggleTTInput()">
+                <label for="ttTypeImg">Image</label>
+                <input type="radio" id="ttTypeHtml" name="ttType" value="html" onclick="window.toggleTTInput()">
+                <label for="ttTypeHtml">HTML</label>
+            </div>
+            <div id="ttInputImg">
+                <input type="file" id="ttFileInput" class="form-control">
+            </div>
+            <div id="ttInputHtml" class="hidden">
+                <textarea id="ttHtmlInput" class="form-control" rows="8" placeholder="Paste HTML Table Code Here..."></textarea>
+            </div>
+            <button class="btn btn-purple" onclick="window.uploadTimeTable()">Upload / Save</button>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal-overlay" id="alertModal"><div class="modal-content"><div class="modal-header">Notice</div><div class="modal-body" id="alertMsg"></div><div class="modal-footer"><button class="btn btn-primary" onclick="document.getElementById('alertModal').style.display='none'">OK</button></div></div></div>
+    <div class="modal-overlay" id="manualAttModal"><div class="modal-content"><div class="modal-header">Manual Entry<i class="fa fa-times" onclick="document.getElementById('manualAttModal').style.display='none'"></i></div><div class="modal-body"><input type="text" id="manualSearch" class="form-control" placeholder="Search..." onkeyup="window.filterManualSearch()"><div id="manualResults" class="list-container" style="border:none;"></div></div></div></div>
+    
+    <div class="modal-overlay" id="ttModal"><div class="modal-content" style="max-width:90%;"><div class="modal-header">Time Table<i class="fa fa-times" onclick="document.getElementById('ttModal').style.display='none'"></i></div><div class="modal-body" id="ttDisplayArea" style="overflow-x:auto;"></div></div></div>
+
+    <!-- PDF Options Modal -->
+    <div class="modal-overlay" id="pdfModal">
+        <div class="modal-content">
+            <div class="modal-header">PDF Options<i class="fa fa-times" onclick="document.getElementById('pdfModal').style.display='none'"></i></div>
+            <div class="modal-body">
+                <button class="btn btn-info" onclick="window.generateSessionPDF('preview')">Preview</button>
+                <button class="btn btn-success" onclick="window.generateSessionPDF('download')">Download</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW: Password Set Modal -->
+    <div class="modal-overlay" id="setPasswordModal">
+        <div class="modal-content">
+            <div class="modal-header">Set Password</div>
+            <div class="modal-body">
+                <p style="font-size:13px; color:#666; margin-bottom:10px;">Create a new password for your account.</p>
+                <input type="password" id="newPass1" class="form-control" placeholder="New Password">
+                <input type="password" id="newPass2" class="form-control" placeholder="Confirm Password">
+                <button class="btn btn-primary" onclick="window.confirmNewPassword()">Set & Login</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SAVE CONFIRM MODAL -->
+    <div class="modal-overlay" id="saveConfirmModal">
+        <div class="modal-content">
+            <button class="icon-btn" style="position:absolute; top:10px; right:10px; color:#333;" onclick="window.closeSaveConfirmModal()"><i class="fa fa-times"></i></button>
+            <div class="modal-header">Finish Session</div>
+            <div class="modal-body">Choose an action:</div>
+            <div class="modal-footer" style="flex-direction: column; gap: 8px;">
+                <button class="btn btn-success" onclick="window.executeEndSession(true)">Save & Confirm</button>
+                <button class="btn btn-danger" onclick="window.executeEndSession(false)">Not Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CANCEL NOT SAVE MODAL -->
+    <div class="modal-overlay" id="cancelNotSaveModal">
+        <div class="modal-content">
+            <div class="modal-header">Exit Session?</div>
+            <div class="modal-body">Data will NOT be saved.</div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" onclick="window.executeCancelSession()">Cancel & Not Save</button>
+                <button class="btn btn-primary" onclick="window.closeCancelModal()">Continue</button>
+            </div>
+            <button class="icon-btn" style="position:absolute; top:10px; right:10px; color:#333;" onclick="window.closeCancelModal()"><i class="fa fa-times"></i></button>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- FIREBASE IMPORTS ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, getDocs, addDoc, query, where, updateDoc, doc, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        // --- PASTE YOUR FIREBASE CONFIG HERE ---
+        const firebaseConfig = {
+            // ... PASTE YOUR CONFIG OBJECT HERE ...
+        };
+        // ---------------------------------------
+
+        // Initialize Firebase
+        let app, db;
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("Firebase Initialized");
+        } catch (e) {
+            console.error("Firebase Error:", e);
+            alert("Error initializing Firebase. Check console.");
+        }
+
+        // --- GLOBAL VARIABLES ---
+        const { jsPDF } = window.jspdf;
+        let currentSess=null, currentUser=null, activeRoleView=null, tempSubjects=[], html5Qr=null, facultyPoller=null, reversePoller=null, lastScannedCode=null;
+        let tempReverseRecords = []; 
+        let formSessionData = null, currentFormList = [], currentFormIndex = 0, currentFormResults = {};
+        let pendingSessionType = null; 
+        let viewingRecordSession = null; 
+        let tempBulkList = []; 
+        let pendingLoginUser = null; 
+
+        // --- HELPER FUNCTIONS FOR FIREBASE ---
+        async function getCollectionData(colName) {
+            const q = query(collection(db, colName));
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(doc => ({ ...doc.data(), _id: doc.id }));
+        }
+
+        async function getDocByField(colName, field, value) {
+            const q = query(collection(db, colName), where(field, "==", value));
+            const snapshot = await getDocs(q);
+            if (snapshot.empty) return null;
+            return { ...snapshot.docs[0].data(), _id: snapshot.docs[0].id };
+        }
+
+        // --- INITIALIZATION ---
+        window.onload = async function() {
+            // Check if Admin exists, if not create
+            const admin = await getDocByField('users', 'id', 'Admin123');
+            if (!admin) {
+                await addDoc(collection(db, 'users'), { id: 'Admin123', pass: '9998', role: 'admin', name: 'System Admin' });
+            }
+            
+            // Check Config
+            const configDoc = await getDoc(doc(db, "config", "main"));
+            if (!configDoc.exists()) {
+                await setDoc(doc(db, "config", "main"), { logo: "", standard: true, reverse: false, formAtt: true });
+            }
+            await applyConfig();
+
+            document.addEventListener('keydown', function(event) {
+                if(event.key==='Enter' && document.getElementById('loginPage').style.display==='block') {
+                    if(document.activeElement.id === 'loginUser') { document.getElementById('loginPass').focus(); } else { window.attemptLogin(); }
+                }
+            });
+        };
+
+        // --- EXPORT FUNCTIONS TO WINDOW ---
+        // Since we are in a module, functions are not global by default. We attach them to window.
+        
+        window.showPage = function(id) {
+            document.querySelectorAll('.container-box').forEach(d => d.style.display = 'none');
+            document.getElementById(id).style.display = 'block';
+            if(id!=='studentScanPage' && id!=='facultyScannerPage') window.stopScanner();
+            if(id!=='qrPage') clearInterval(facultyPoller);
+            if(id!=='studentPage') clearInterval(reversePoller);
+        }
+        window.showAlert = function(msg) { document.getElementById('alertMsg').innerText=msg; document.getElementById('alertModal').style.display='flex'; }
+        window.stopScanner = function() { if(html5Qr) html5Qr.stop().catch(e=>{}); }
+        window.showToast = function(msg, type='success') {
+            const t = document.getElementById('toast'); t.className = `toast-notification toast-${type} show`; document.getElementById('toastMsg').innerText = msg;
+            if(navigator.vibrate) navigator.vibrate(200); setTimeout(() => t.classList.remove('show'), 2500);
+        }
+
+        // --- AUTH ---
+        window.attemptLogin = async function() {
+            const u = document.getElementById('loginUser').value.trim(); const p = document.getElementById('loginPass').value.trim();
+            if(!u) return window.showAlert("Enter User ID");
+            if(!p) return window.showAlert("Enter Password"); 
+            
+            const user = await getDocByField('users', 'id', u);
+
+            if (user && p === "New-1234") {
+                if (user.pass === "PENDING") {
+                    pendingLoginUser = user;
+                    document.getElementById('newPass1').value = "";
+                    document.getElementById('newPass2').value = "";
+                    document.getElementById('setPasswordModal').style.display = 'flex';
+                    return;
+                }
+            }
+
+            if(user && user.pass === p) {
+                currentUser = user;
+                if(user.role === 'admin' || user.role === 'faculty') {
+                    document.getElementById('dashTitle').innerText = (user.role === 'admin' ? "Admin Panel" : "Faculty Panel");
+                    document.getElementById('adminControls').classList.toggle('hidden', user.role !== 'admin');
+                    
+                    const btnFac = document.getElementById('btnFacInfo');
+                    if (user.role === 'faculty') {
+                        btnFac.style.display = user.infoSubmitted ? 'none' : 'block';
+                    } else {
+                        btnFac.style.display = 'none';
+                    }
+
+                    await applyConfig(); window.showPage('mainDashboard');
+                } else {
+                    document.getElementById('stuDisplayId').innerText = user.id; document.getElementById('stuDisplayClass').innerText = user.cls;
+                    const btnInfo = document.getElementById('btnStudentInfo');
+                    if(user.infoSubmitted) btnInfo.style.display = 'none'; else btnInfo.style.display = 'block';
+                    await applyConfig(); window.startStudentReversePoll(); window.showPage('studentPage');
+                }
+            } else window.showAlert("Invalid Credentials");
+        }
+
+        window.confirmNewPassword = async function() {
+            const p1 = document.getElementById('newPass1').value.trim();
+            const p2 = document.getElementById('newPass2').value.trim();
+            if(!p1 || !p2) return alert("Enter password");
+            if(p1 !== p2) return alert("Passwords do not match");
+
+            if(pendingLoginUser) {
+                await updateDoc(doc(db, "users", pendingLoginUser._id), { pass: p1 });
+                currentUser = { ...pendingLoginUser, pass: p1 };
+                document.getElementById('setPasswordModal').style.display = 'none';
+                
+                document.getElementById('stuDisplayId').innerText = currentUser.id; 
+                document.getElementById('stuDisplayClass').innerText = currentUser.cls;
+                const btnInfo = document.getElementById('btnStudentInfo');
+                if(currentUser.infoSubmitted) btnInfo.style.display = 'none'; else btnInfo.style.display = 'block';
+                await applyConfig(); window.startStudentReversePoll(); window.showPage('studentPage');
+                window.showToast("Password Set Successfully");
+            }
+        }
+
+        window.logout = function() { currentUser=null; document.getElementById('loginUser').value=""; document.getElementById('loginPass').value=""; window.showPage('loginPage'); }
+
+        // --- SETTINGS ---
+        window.openSettingsPage = async function() { 
+            const cDoc = await getDoc(doc(db, "config", "main"));
+            const c = cDoc.data();
+            document.getElementById('toggleStandard').checked = c.standard; 
+            document.getElementById('toggleReverse').checked = c.reverse; 
+            document.getElementById('toggleForm').checked = c.formAtt; 
+            document.getElementById('poweredByInput').value = c.poweredBy || "";
+            window.showPage('settingsPage'); 
+        }
+        window.saveConfig = async function() { 
+            const c = {
+                standard: document.getElementById('toggleStandard').checked,
+                reverse: document.getElementById('toggleReverse').checked,
+                formAtt: document.getElementById('toggleForm').checked,
+                poweredBy: document.getElementById('poweredByInput').value
+            };
+            // Preserve logos if not changed (handled by upload functions separately)
+            await updateDoc(doc(db, "config", "main"), c);
+            await applyConfig(); 
+            window.showToast("Settings Saved");
+        }
+        window.uploadLogo = function() { const f = document.getElementById('logoInput').files[0]; if(!f) return; const r = new FileReader(); r.onloadend = async function() { await updateDoc(doc(db, "config", "main"), { logo: r.result }); await applyConfig(); }; r.readAsDataURL(f); }
+        window.uploadPdfLogo = function() { const f = document.getElementById('pdfLogoInput').files[0]; if(!f) return; const r = new FileReader(); r.onloadend = async function() { await updateDoc(doc(db, "config", "main"), { pdfLogo: r.result }); window.showToast("PDF Logo Saved"); }; r.readAsDataURL(f); }
+
+        async function applyConfig() { 
+            const cDoc = await getDoc(doc(db, "config", "main"));
+            const c = cDoc.data();
+            if(c.logo) document.getElementById('mainLogo').src = c.logo; 
+            document.getElementById('btnStartStandard').classList.toggle('hidden', !c.standard); 
+            document.getElementById('btnStartReverse').classList.toggle('hidden', !c.reverse); 
+            document.getElementById('btnStartForm').classList.toggle('hidden', !c.formAtt); 
+            document.getElementById('studentScannerBtn').classList.toggle('hidden', !c.standard); 
+            document.getElementById('studentMyQrBtn').classList.toggle('hidden', !c.reverse); 
+            
+            const pbText = c.poweredBy || "Powered by UTU";
+            document.getElementById('loginPoweredBy').innerText = pbText;
+        }
+
+        // --- PDF GENERATION ---
+        window.openPdfOptions = function() { document.getElementById('pdfModal').style.display = 'flex'; }
+
+        window.generateSessionPDF = async function(action) {
+            document.getElementById('pdfModal').style.display = 'none';
+            if (!viewingRecordSession) return window.showAlert("Session Error");
+
+            const docPDF = new jsPDF();
+            const cDoc = await getDoc(doc(db, "config", "main"));
+            const config = cDoc.data();
+            const logo = config.pdfLogo || config.logo; 
+
+            if (logo) { docPDF.addImage(logo, 'PNG', 14, 10, 20, 20); } 
+            docPDF.setFontSize(14); docPDF.setFont("helvetica", "bold");
+            docPDF.text("Uka Tarsadia University", 40, 20); 
+            docPDF.setFontSize(12); docPDF.text("Attendance Sheet", 40, 27);
+
+            docPDF.setFontSize(10); docPDF.setFont("helvetica", "normal");
+            docPDF.text(`Class: ${viewingRecordSession.cls}`, 14, 45);
+            docPDF.text(`Subject: ${viewingRecordSession.sub}`, 14, 50);
+            docPDF.text(`Session ID: ${viewingRecordSession.id}`, 140, 45);
+            docPDF.text(`Date: ${viewingRecordSession.date}`, 140, 50);
+
+            // Fetch Students and Records
+            const allUsers = await getCollectionData('users');
+            const students = allUsers.filter(u => u.role === 'student' && u.cls === viewingRecordSession.cls)
+                .sort((a,b) => a.id.localeCompare(b.id, undefined, {numeric: true}));
+
+            const allRecords = await getCollectionData('records');
+            const records = allRecords.filter(r => r.sessionId === viewingRecordSession.id);
+
+            const tableData = students.map((stu, index) => {
+                const rec = records.find(r => r.enroll === stu.id);
+                return [ index + 1, stu.id, stu.name || "-", rec ? "P" : "A", rec ? rec.time : "-" ];
+            });
+
+            docPDF.autoTable({
+                startY: 55, 
+                head: [['Sr', 'Enrollment', 'Name', 'Status', 'Time']],
+                body: tableData,
+                theme: 'grid',
+                styles: { fontSize: 8, cellPadding: 1.5 },
+                headStyles: { fillColor: [51, 122, 183], textColor: 255 },
+                columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 35 }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 15, halign: 'center' }, 4: { cellWidth: 25 } }
+            });
+
+            const pageCount = docPDF.internal.getNumberOfPages();
+            for(let i = 1; i <= pageCount; i++) {
+                docPDF.setPage(i);
+                docPDF.setFontSize(8);
+                const footerText = `Downloaded by: ${currentUser.id} | Date: ${new Date().toLocaleString()}`;
+                docPDF.text(footerText, 14, docPDF.internal.pageSize.height - 10);
+                docPDF.text(`Page ${i} of ${pageCount}`, docPDF.internal.pageSize.width - 25, docPDF.internal.pageSize.height - 10);
+            }
+
+            if (action === 'download') { docPDF.save(`Attendance_${viewingRecordSession.cls}_${viewingRecordSession.date}.pdf`); } else { window.open(docPDF.output('bloburl'), '_blank'); }
+        }
+
+        // --- BULK ADD ---
+        window.openBulkAddPage = async function() {
+            const c = document.getElementById('bulkClassSelect'); c.innerHTML = "<option value=''>Select Class</option>";
+            const classes = await getCollectionData('classes');
+            classes.forEach(x=>c.innerHTML+=`<option value="${x.name}">${x.name}</option>`);
+            document.getElementById('bulkTypeInput').value = "";
+            document.getElementById('bulkRangeStart').value = "";
+            document.getElementById('bulkRangeEnd').value = "";
+            document.getElementById('bulkPreviewList').innerHTML = "";
+            tempBulkList = [];
+            window.showPage('bulkAddPage');
+        }
+
+        window.previewBulkIds = async function() {
+            const cls = document.getElementById('bulkClassSelect').value;
+            const type = document.getElementById('bulkTypeInput').value.trim(); 
+            const startStr = document.getElementById('bulkRangeStart').value;
+            const endStr = document.getElementById('bulkRangeEnd').value;
+
+            if(!cls || !type || !startStr || !endStr) return window.showAlert("Fill all fields");
+            
+            const start = parseInt(startStr);
+            const end = parseInt(endStr);
+            if(isNaN(start) || isNaN(end) || start > end) return window.showAlert("Invalid Range");
+
+            const users = await getCollectionData('users');
+            const listDiv = document.getElementById('bulkPreviewList');
+            listDiv.innerHTML = "";
+            tempBulkList = [];
+
+            const padLen = Math.max(startStr.length, endStr.length);
+
+            for(let i = start; i <= end; i++) {
+                const suffix = i.toString().padStart(padLen, '0');
+                const enroll = type + suffix; 
+                
+                const exists = users.some(u => u.id === enroll);
+                tempBulkList.push({ id: enroll, exists: exists });
+
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                if(exists) div.classList.add('bulk-item-exist');
+                
+                div.innerHTML = `
+                    <span>${enroll} ${exists ? '(Exists)' : ''}</span>
+                    <svg class="delete-icon-btn" viewBox="0 0 24 24" onclick="window.removeBulkItem('${enroll}')">
+                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                    </svg>
+                `;
+                listDiv.appendChild(div);
+            }
+        }
+
+        window.removeBulkItem = function(id) {
+            tempBulkList = tempBulkList.filter(x => x.id !== id);
+            const els = document.querySelectorAll('#bulkPreviewList .list-item');
+            els.forEach(el => {
+                if(el.innerText.includes(id)) el.remove();
+            });
+        }
+
+        window.saveBulkUsers = async function() {
+            const cls = document.getElementById('bulkClassSelect').value;
+            if(!cls) return window.showAlert("Select Class");
+            if(tempBulkList.length === 0) return window.showAlert("No students to add");
+
+            let addedCount = 0;
+            const users = await getCollectionData('users');
+
+            for (const item of tempBulkList) {
+                if(!item.exists && !users.some(u => u.id === item.id)) {
+                    await addDoc(collection(db, 'users'), {
+                        id: item.id,
+                        pass: "PENDING", 
+                        role: 'student',
+                        cls: cls,
+                        name: "" 
+                    });
+                    addedCount++;
+                }
+            }
+
+            window.showAlert(`Added ${addedCount} Students`);
+            window.showPage('mainDashboard');
+        }
+
+        // --- SAVE / CANCEL ---
+        window.confirmEndSession = function(type) {
+            pendingSessionType = type;
+            document.getElementById('saveConfirmModal').style.display = 'flex';
+        }
+        window.closeSaveConfirmModal = function() {
+            document.getElementById('saveConfirmModal').style.display = 'none';
+        }
+        window.executeEndSession = async function(save) {
+            document.getElementById('saveConfirmModal').style.display = 'none';
+            if (save) {
+                if (pendingSessionType === 'reverse') {
+                    if(html5Qr && html5Qr.isScanning) { 
+                        html5Qr.stop().then(() => { window.saveReverseRecords(); }).catch(e => { window.saveReverseRecords(); });
+                    } else { window.saveReverseRecords(); }
+                } 
+                else if (pendingSessionType === 'form') { window.saveFormSession(); }
+                else if (pendingSessionType === 'qr') { window.endQrSession(); }
+            } else {
+                window.executeCancelSession();
+            }
+        }
+        window.saveReverseRecords = async function() {
+            // Records are saved in real-time in this version, but we update session status
+            // If session was new, it's already in DB.
+            // Just ensure session is marked inactive if needed, or just exit.
+            // For consistency with old logic, we just exit as records are pushed live.
+            window.showToast("Attendance Saved");
+            window.showPage('mainDashboard');
+        }
+
+        window.confirmCancelNotSave = function(type) {
+            pendingSessionType = type;
+            document.getElementById('cancelNotSaveModal').style.display = 'flex';
+        }
+        window.closeCancelModal = function() {
+            document.getElementById('cancelNotSaveModal').style.display = 'none';
+        }
+        window.executeCancelSession = async function() {
+            document.getElementById('cancelNotSaveModal').style.display = 'none';
+            if (pendingSessionType === 'reverse') {
+                // In Firebase version, records are added live. "Cancel" is tricky.
+                // We will delete the records added in this session.
+                const recs = await getCollectionData('records');
+                const toDelete = recs.filter(r => r.sessionId === currentSess.id);
+                for(const r of toDelete) {
+                    await deleteDoc(doc(db, "records", r._id));
+                }
+                // Also delete session if it was new
+                const sessDoc = await getDocByField('sessions', 'id', currentSess.id);
+                if(sessDoc) await deleteDoc(doc(db, "sessions", sessDoc._id));
+
+                if(html5Qr && html5Qr.isScanning) { html5Qr.stop().then(()=>{window.showPage('mainDashboard');}).catch(()=>{window.showPage('mainDashboard');}); } 
+                else { window.showPage('mainDashboard'); }
+
+            } else if (pendingSessionType === 'form') {
+                window.closeFormCleanup();
+            } else if (pendingSessionType === 'qr') {
+                window.endQrSession(); 
+            }
+        }
+
+        // --- FACULTY QR ---
+        window.prepareAttendance = async function() { 
+            const s=document.getElementById('attSubSelect'); const c=document.getElementById('attClassSelect'); 
+            s.innerHTML="<option value=''>Select Subject</option>"; c.innerHTML="<option value=''>Select Class</option>"; 
+            const classes = await getCollectionData('classes');
+            classes.forEach(x=>c.innerHTML+=`<option value="${x.name}">${x.name}</option>`); 
+            
+            let sub = [];
+            if(currentUser.role==='faculty' && currentUser.subjects) sub = currentUser.subjects;
+            else { const subs = await getCollectionData('subjects'); sub = subs.map(x=>x.name); }
+            
+            sub.forEach(x=>s.innerHTML+=`<option value="${x}">${x}</option>`); 
+            document.getElementById('resumeSessionId').value=""; 
+            window.showPage('attendanceSetupPage'); 
+        }
+        window.generateNewSession = async function() { 
+            const s=document.getElementById('attSubSelect').value; const c=document.getElementById('attClassSelect').value; if(!s||!c){window.showAlert("Select details");return;} 
+            const id=String.fromCharCode(65+Math.floor(Math.random()*26))+Math.floor(100+Math.random()*900); 
+            const sess={id:id,code:window.generateScanCode(),sub:s,cls:c,active:true,date:new Date().toLocaleDateString('en-CA'),startTime:new Date().toLocaleTimeString()}; 
+            await addDoc(collection(db, 'sessions'), sess);
+            window.startSessionView(sess); 
+        }
+        window.resumeSession = async function() { 
+            const id=document.getElementById('resumeSessionId').value.trim(); 
+            const s = await getDocByField('sessions', 'id', id);
+            if(s){
+                s.active=true; 
+                await updateDoc(doc(db, "sessions", s._id), { active: true });
+                window.startSessionView(s);
+            } else window.showAlert("Invalid ID"); 
+        }
+        window.startSessionView = function(s) { currentSess=s; document.getElementById('staticSessionId').innerText=s.id; document.getElementById('activeDetails').innerText=`${s.sub} (${s.cls})`; window.updateQrDisplay(); clearInterval(facultyPoller); facultyPoller=setInterval(window.updateLiveCount,3000); window.updateLiveCount(); window.showPage('qrPage'); }
+        window.generateScanCode = function() { return String.fromCharCode(65+Math.floor(Math.random()*26))+Math.floor(10000+Math.random()*90000); }
+        window.updateQrDisplay = function() { document.getElementById('dynamicScanCode').innerText=currentSess.code; document.getElementById('qrImg').src=`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${currentSess.code}`; }
+        window.nextQrCode = async function() { 
+            currentSess.code=window.generateScanCode(); 
+            const sDoc = await getDocByField('sessions', 'id', currentSess.id);
+            if(sDoc) await updateDoc(doc(db, "sessions", sDoc._id), { code: currentSess.code });
+            window.updateQrDisplay(); 
+        }
+        window.endQrSession = async function() { 
+            currentSess.active=false; 
+            const sDoc = await getDocByField('sessions', 'id', currentSess.id);
+            if(sDoc) await updateDoc(doc(db, "sessions", sDoc._id), { active: false });
+            clearInterval(facultyPoller); window.showPage('mainDashboard'); 
+        }
+        window.updateLiveCount = async function() { 
+            if(!currentSess)return; 
+            const q = query(collection(db, 'records'), where('sessionId', '==', currentSess.id));
+            const snap = await getDocs(q);
+            document.getElementById('livePresentCount').innerText=`Present: ${snap.size}`; 
+        }
+        window.copySessionId = function() { const id = document.getElementById('staticSessionId').innerText; navigator.clipboard.writeText(id).then(() => window.showToast("ID Copied!")); }
+
+        // --- FORM ATTENDANCE ---
+        window.prepareFormAttendance = async function() {
+            const s=document.getElementById('formSubSelect'); const c=document.getElementById('formClassSelect'); 
+            s.innerHTML="<option value=''>Select Subject</option>"; c.innerHTML="<option value=''>Select Class</option>"; 
+            const classes = await getCollectionData('classes');
+            classes.forEach(x=>c.innerHTML+=`<option value="${x.name}">${x.name}</option>`); 
+            
+            let sub = [];
+            if(currentUser.role==='faculty' && currentUser.subjects) sub = currentUser.subjects;
+            else { const subs = await getCollectionData('subjects'); sub = subs.map(x=>x.name); }
+            sub.forEach(x=>s.innerHTML+=`<option value="${x}">${x}</option>`); 
+            window.showPage('formSetupPage');
+        }
+        window.startFormAttendance = async function() {
+            const s=document.getElementById('formSubSelect').value; const c=document.getElementById('formClassSelect').value; if(!s||!c){window.showAlert("Select details");return;}
+            const id="A"+Math.floor(100+Math.random()*900);
+            formSessionData = {id:id, sub:s, cls:c, date:new Date().toLocaleDateString('en-CA'), startTime:new Date().toLocaleTimeString(), type:'form'};
+            
+            const allUsers = await getCollectionData('users');
+            currentFormList = allUsers.filter(u => u.role === 'student' && u.cls === c).sort((a,b) => a.id.localeCompare(b.id, undefined, {numeric: true}));
+            if(currentFormList.length === 0) { window.showAlert("No students in class"); return; }
+            currentFormIndex = 0; currentFormResults = {};
+            document.getElementById('formSessionDisplayId').innerText = id;
+            window.renderFormStudent();
+            window.showPage('formAttendancePage');
+        }
+        window.renderFormStudent = function() {
+            const stu = currentFormList[currentFormIndex];
+            document.getElementById('formStudentEnroll').innerText = stu.id;
+            document.getElementById('formStudentName').innerText = stu.name || "Student Name";
+            document.getElementById('formStudentImg').src = (stu.image && stu.image.length > 20) ? stu.image : "https://via.placeholder.com/120?text=No+Img";
+            
+            const btnP = document.getElementById('btnFormPresent');
+            const btnA = document.getElementById('btnFormAbsent');
+            btnP.className = "att-btn present";
+            btnA.className = "att-btn absent";
+
+            if (currentFormResults[stu.id] === 'P') btnP.classList.add('active');
+            if (currentFormResults[stu.id] === 'A') btnA.classList.add('active');
+
+            const btnNext = document.getElementById('btnFormNext');
+            const btnSave = document.getElementById('btnFormSave');
+            
+            btnSave.classList.add('hidden');
+            btnNext.classList.add('hidden');
+
+            if (currentFormIndex === currentFormList.length - 1) {
+                if(currentFormResults[stu.id]) { btnSave.classList.remove('hidden'); }
+            } else {
+                if (currentFormResults[stu.id]) btnNext.classList.remove('hidden');
+            }
+        }
+        window.markFormStatus = function(status) {
+            const stu = currentFormList[currentFormIndex];
+            currentFormResults[stu.id] = status;
+            window.renderFormStudent();
+            setTimeout(() => {
+                if (currentFormIndex < currentFormList.length - 1) {
+                    currentFormIndex++;
+                    window.renderFormStudent();
+                } else {
+                    document.getElementById('btnFormSave').classList.remove('hidden');
+                }
+            }, 300);
+        }
+        window.prevFormStudent = function() { if (currentFormIndex > 0) { currentFormIndex--; window.renderFormStudent(); } }
+        window.nextFormStudent = function() { if (currentFormIndex < currentFormList.length - 1) { currentFormIndex++; window.renderFormStudent(); } }
+        window.saveFormSession = async function() {
+            let presentCount = 0;
+            for (const [enroll, status] of Object.entries(currentFormResults)) {
+                if (status === 'P') {
+                    await addDoc(collection(db, 'records'), { enroll: enroll, sub: formSessionData.sub, cls: formSessionData.cls, time: new Date().toLocaleTimeString(), sessionId: formSessionData.id, date: formSessionData.date, type: 'form' });
+                    presentCount++;
+                }
+            }
+            await addDoc(collection(db, 'sessions'), formSessionData);
+            window.showToast(`Saved! ${presentCount} Present`);
+            window.closeFormCleanup();
+        }
+        window.closeFormCleanup = function() { formSessionData = null; currentFormList = []; currentFormResults = {}; window.showPage('mainDashboard'); }
+
+        // --- FACULTY REVERSE SCANNER ---
+        window.prepareReverseScan = async function() { 
+            const s=document.getElementById('revSubSelect'); const c=document.getElementById('revClassSelect'); 
+            s.innerHTML="<option value=''>Select Subject</option>"; c.innerHTML="<option value=''>Select Class</option>"; 
+            const classes = await getCollectionData('classes');
+            classes.forEach(x=>c.innerHTML+=`<option value="${x.name}">${x.name}</option>`); 
+            
+            let sub = [];
+            if(currentUser.role==='faculty' && currentUser.subjects) sub = currentUser.subjects;
+            else { const subs = await getCollectionData('subjects'); sub = subs.map(x=>x.name); }
+            sub.forEach(x=>s.innerHTML+=`<option value="${x}">${x}</option>`); 
+            
+            document.getElementById('revResumeId').value = ""; // Clear resume input
+            window.showPage('reverseSetupPage'); 
+        }
+
+        window.startReverseScanning = async function(isResume) {
+            let s, c;
+            
+            if (isResume) {
+                const resumeId = document.getElementById('revResumeId').value.trim();
+                if (!resumeId) return window.showAlert("Enter Session ID");
+                
+                const sess = await getDocByField('sessions', 'id', resumeId);
+                if (!sess) return window.showAlert("Session not found");
+                
+                currentSess = sess;
+                s = sess.sub;
+                c = sess.cls;
+            } else {
+                s=document.getElementById('revSubSelect').value; 
+                c=document.getElementById('revClassSelect').value; 
+                if(!s||!c){window.showAlert("Select details");return;}
+                
+                currentSess={id:"REV"+Math.floor(1000+Math.random()*9000),sub:s,cls:c,active:true,date:new Date().toLocaleDateString('en-CA'),startTime:new Date().toLocaleTimeString(),type:'reverse'};
+                await addDoc(collection(db, 'sessions'), currentSess);
+            }
+
+            tempReverseRecords = []; 
+            document.getElementById('revSessInfo').innerText=`Scanning ${c} - ${s} (ID: ${currentSess.id})`; 
+            document.getElementById('tempRevCount').innerText = "0";
+            document.getElementById('lastScan').innerText = "Waiting...";
+            document.getElementById('scannerList').innerHTML = ""; // Clear list
+
+            window.showPage('facultyScannerPage');
+            lastScannedCode = null; 
+            html5Qr = new Html5Qrcode("facReader"); 
+            html5Qr.start({facingMode:"environment"}, {fps:20, qrbox:200}, (e)=>{ window.handleReverseScan(e); }, ()=>{});
+        }
+
+        window.handleReverseScan = async function(enroll) {
+            if(lastScannedCode === enroll) return; 
+            lastScannedCode = enroll; 
+            document.getElementById('lastScan').innerText = enroll; // Update Last Scanned Display
+            setTimeout(() => { lastScannedCode = null; }, 1500);
+
+            // Check if already marked in DB
+            const q = query(collection(db, 'records'), where('enroll', '==', enroll), where('sessionId', '==', currentSess.id));
+            const snap = await getDocs(q);
+
+            if(!snap.empty) { 
+                window.showToast(`${enroll} Already Marked`, 'warning'); 
+            } else {
+                const u = await getDocByField('users', 'id', enroll);
+                if (u && u.cls !== currentSess.cls) { 
+                    window.showToast(`Wrong Class (${u.cls})`, 'warning'); 
+                    return; 
+                }
+                
+                // Add to DB immediately
+                await addDoc(collection(db, 'records'), { enroll: enroll, sub: currentSess.sub, cls: currentSess.cls, time: new Date().toLocaleTimeString(), sessionId: currentSess.id, date: currentSess.date, type:'reverse' });
+                
+                // Update UI List
+                const listDiv = document.getElementById('scannerList');
+                const entry = document.createElement('div');
+                entry.className = 'scanned-entry';
+                entry.innerHTML = `<span>${enroll}</span><span style="color:green"><i class="fa fa-check"></i></span>`;
+                listDiv.prepend(entry); // Add to top
+
+                // Update Count
+                const countSpan = document.getElementById('tempRevCount');
+                countSpan.innerText = parseInt(countSpan.innerText) + 1;
+
+                window.showToast(`${enroll} Marked`, 'success');
+            }
+        }
+
+        // --- STUDENT ---
+        window.openStudentScanner = function() { window.showPage('studentScanPage'); html5Qr=new Html5Qrcode("reader"); html5Qr.start({facingMode:"environment"}, {fps:10, qrbox:{width:220,height:220}}, (t)=>{window.stopScanner();window.processStudentAttendance(t);}, ()=>{}); }
+        window.closeStudentScanner = function() { window.showPage('studentPage'); if(html5Qr && html5Qr.isScanning) { html5Qr.stop().catch(e=>console.log(e)); } }
+        window.processStudentAttendance = async function(code) {
+            const sDoc = await getDocByField('sessions', 'code', code);
+            if(sDoc && sDoc.active){
+                if(currentUser.cls!==sDoc.cls){window.showPage('studentPage');window.showAlert("Wrong Class!");return;}
+                
+                const q = query(collection(db, 'records'), where('enroll', '==', currentUser.id), where('sessionId', '==', sDoc.id));
+                const snap = await getDocs(q);
+
+                if(snap.empty){
+                    await addDoc(collection(db, 'records'), {enroll:currentUser.id,sub:sDoc.sub,cls:sDoc.cls,time:new Date().toLocaleTimeString(),sessionId:sDoc.id,date:sDoc.date});
+                }
+                document.getElementById('successSessId').innerText=sDoc.id; document.getElementById('successQrId').innerText="Standard"; window.showPage('studentSuccessPage');
+            } else { window.showPage('studentPage'); window.showAlert("Invalid QR"); }
+        }
+        window.startStudentReversePoll = function() {
+            clearInterval(reversePoller); reversePoller = setInterval(()=>{
+                // Placeholder for reverse poll logic if needed
+            }, 2000);
+        }
+        window.openStudentMyQR = function() { if(document.getElementById('studentMyQrBtn').classList.contains('disabled')) return; document.getElementById('studentPersonalQr').src=`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${currentUser.id}`; document.getElementById('stuQrEnroll').innerText=currentUser.id; window.showPage('studentMyQrPage'); }
+
+        // --- STUDENT INFO ---
+        window.openStudentInfoForm = function() {
+            document.getElementById('stuInfoName').value = currentUser.name || "";
+            document.getElementById('stuInfoMobile').value = currentUser.mobile || "";
+            document.getElementById('stuInfoParentMobile').value = currentUser.parentMobile || "";
+            document.getElementById('stuInfoImgPreview').src = (currentUser.image && currentUser.image.length > 20) ? currentUser.image : "https://via.placeholder.com/120?text=Photo";
+            window.showPage('studentInfoPage');
+        }
+        window.previewStudentImg = function() {
+            const f = document.getElementById('stuInfoImgInput').files[0];
+            if(f) {
+                const r = new FileReader();
+                r.onloadend = function() { document.getElementById('stuInfoImgPreview').src = r.result; }
+                r.readAsDataURL(f);
+            }
+        }
+        window.saveStudentInfo = async function() {
+            const name = document.getElementById('stuInfoName').value.trim().toUpperCase();
+            const mob = document.getElementById('stuInfoMobile').value;
+            const pmob = document.getElementById('stuInfoParentMobile').value;
+            const img = document.getElementById('stuInfoImgPreview').src;
+            if(!name) { window.showAlert("Name is required"); return; }
+            
+            let updateData = { name: name, mobile: mob, parentMobile: pmob, infoSubmitted: true };
+            if(img.includes('data:image')) updateData.image = img;
+            
+            try {
+                await updateDoc(doc(db, "users", currentUser._id), updateData);
+                currentUser = { ...currentUser, ...updateData };
+                document.getElementById('btnStudentInfo').style.display = 'none';
+                window.showPage('studentPage');
+                window.showToast("Info Updated!");
+            } catch(e) { window.showAlert("Image too large!"); }
+        }
+
+        // --- FACULTY INFO ---
+        window.openFacultyInfoForm = function() {
+            document.getElementById('facInfoName').value = currentUser.name || "";
+            document.getElementById('facInfoImgPreview').src = (currentUser.image && currentUser.image.length > 20) ? currentUser.image : "https://via.placeholder.com/120?text=Photo";
+            window.showPage('facultyInfoPage');
+        }
+        window.previewFacultyImg = function() {
+            const f = document.getElementById('facInfoImgInput').files[0];
+            if(f) {
+                const r = new FileReader();
+                r.onloadend = function() { document.getElementById('facInfoImgPreview').src = r.result; }
+                r.readAsDataURL(f);
+            }
+        }
+        window.saveFacultyInfo = async function() {
+            const name = document.getElementById('facInfoName').value.trim().toUpperCase();
+            const img = document.getElementById('facInfoImgPreview').src;
+            if(!name) { window.showAlert("Name is required"); return; }
+            
+            let updateData = { name: name, infoSubmitted: true };
+            if(img.includes('data:image')) updateData.image = img;
+
+            try {
+                await updateDoc(doc(db, "users", currentUser._id), updateData);
+                currentUser = { ...currentUser, ...updateData };
+                document.getElementById('btnFacInfo').style.display = 'none';
+                window.showPage('mainDashboard');
+                window.showToast("Profile Updated!");
+            } catch(e) { window.showAlert("Image too large!"); }
+        }
+
+        // --- MANUAL & RECORDS ---
+        window.openManualAttendanceModal=function(){document.getElementById('manualSearch').value="";document.getElementById('manualResults').innerHTML="";document.getElementById('manualAttModal').style.display='flex';}
+        window.filterManualSearch=async function(){
+            const t=document.getElementById('manualSearch').value.toLowerCase().trim();const d=document.getElementById('manualResults');d.innerHTML="";if(t.length<1)return;
+            const users = await getCollectionData('users');
+            users.filter(u=>u.role==='student'&&u.cls===currentSess.cls&&u.id.toLowerCase().includes(t)).forEach(u=>{
+                const i=document.createElement('div');i.className='list-item';i.innerText=u.id;
+                i.onclick=async ()=>{
+                    const q = query(collection(db, 'records'), where('enroll', '==', u.id), where('sessionId', '==', currentSess.id));
+                    const snap = await getDocs(q);
+                    if(snap.empty){
+                        await addDoc(collection(db, 'records'), {enroll:u.id,sub:currentSess.sub,cls:currentSess.cls,time:new Date().toLocaleTimeString(),sessionId:currentSess.id,date:currentSess.date});
+                        window.showToast("Marked "+u.id);window.updateLiveCount();
+                    }else window.showToast("Already marked", 'warning');
+                    document.getElementById('manualAttModal').style.display='none';
+                };d.appendChild(i);
+            });
+        }
+        
+        window.openRecordsFilter=async function(){
+            document.getElementById('recSubSelect').innerHTML="<option value=''>Subject</option>";
+            document.getElementById('recClassSelect').innerHTML="<option value=''>Class</option>"; // Reset Class Select
+            
+            let subs = [];
+            if(currentUser.role==='faculty'&&currentUser.subjects) subs = currentUser.subjects;
+            else { const s = await getCollectionData('subjects'); subs = s.map(x=>x.name); }
+            subs.forEach(x=>document.getElementById('recSubSelect').innerHTML+=`<option value="${x}">${x}</option>`);
+            
+            // Populate Class Select
+            const classes = await getCollectionData('classes');
+            classes.forEach(x=>document.getElementById('recClassSelect').innerHTML+=`<option value="${x.name}">${x.name}</option>`);
+
+            document.getElementById('sessionResultsList').innerHTML="";
+            window.showPage('recordsFilterPage');
+        }
+
+        window.findRecordSessions=async function(){
+            const sb=document.getElementById('recSubSelect').value;
+            const cl=document.getElementById('recClassSelect').value; // Get Class
+            const dt=document.getElementById('recDateSelect').value;
+            
+            if(!sb||!dt) return window.showAlert("Select Subject and Date");
+            // Class is optional, but if selected, filter by it.
+
+            const d=document.getElementById('sessionResultsList');d.innerHTML="";
+            
+            let q = query(collection(db, 'sessions'), where('sub', '==', sb), where('date', '==', dt));
+            if(cl) {
+                q = query(collection(db, 'sessions'), where('sub', '==', sb), where('date', '==', dt), where('cls', '==', cl));
+            }
+
+            const snap = await getDocs(q);
+            const sessions = snap.docs.map(doc => ({...doc.data(), _id: doc.id}));
+
+            sessions.forEach(x=>{
+                const i=document.createElement('div');i.className='list-item';i.innerHTML=`<span>${x.cls} <small>(${x.startTime})</small></span> <i class="fa fa-angle-right"></i>`;
+                i.onclick=async ()=>{ 
+                    viewingRecordSession = x; 
+                    document.getElementById('recDetailTitle').innerText=`${x.cls} - ${x.sub}`;
+                    const l=document.getElementById('detailedAttList');l.innerHTML="";
+                    
+                    const allUsers = await getCollectionData('users');
+                    const st=allUsers.filter(u=>u.role==='student'&&u.cls===x.cls);
+                    
+                    const allRecs = await getCollectionData('records');
+                    const rc=allRecs.filter(r=>r.sessionId===x.id);
+                    
+                    document.getElementById('recStats').innerText=`Present: ${rc.length}/${st.length}`;
+                    st.forEach(s=>{
+                        const p=rc.find(z=>z.enroll===s.id);
+                        const r=document.createElement('div');r.className='list-item';r.style.color=p?'green':'red';r.innerHTML=`<span>${s.id}</span> <span>${p?p.time:'Absent'}</span>`;l.appendChild(r);
+                    });
+                    window.showPage('recordsDetailPage');
+                };d.appendChild(i);
+            });
+        }
+
+        // --- LIST MANAGERS ---
+        window.openSubjectPage = function() { window.simpleListMgr("Subjects", "subjects"); } 
+        window.openClassPage = function() { window.simpleListMgr("Classes", "classes"); }
+        window.simpleListMgr = async function(t, k) { 
+            document.getElementById('simpleListTitle').innerText = t; 
+            await window.renderSimpleList(k); 
+            document.getElementById('simpleListBtn').onclick = async () => { 
+                const v = document.getElementById('simpleListInput').value.trim(); 
+                if(!v) return; 
+                
+                const arr = await getCollectionData(k); 
+                if(arr.some(item => item.name.toLowerCase() === v.toLowerCase())) {
+                    window.showToast("Already Exists!", 'warning');
+                    return;
+                }
+
+                await addDoc(collection(db, k), {name:v}); 
+                document.getElementById('simpleListInput').value = ""; 
+                await window.renderSimpleList(k); 
+            }; 
+            window.showPage('simpleListPage'); 
+        }
+        window.renderSimpleList = async function(k, f = "") { 
+            const div = document.getElementById('simpleListContainer'); div.innerHTML = ""; 
+            let arr = await getCollectionData(k); 
+            if (arr.length > 10 || f !== "") { 
+                const inp = document.createElement('input'); inp.className = "form-control"; inp.placeholder = "Search..."; inp.value = f; inp.style.marginTop = "10px"; inp.onkeyup = (e) => window.renderSimpleList(k, e.target.value); div.appendChild(inp); 
+                if (f) arr = arr.filter(x => x.name.toLowerCase().includes(f.toLowerCase())); 
+            } 
+            arr.forEach((x) => { 
+                const item = document.createElement('div'); item.className = "list-item"; item.innerHTML = `<span>${x.name}</span> <i class="fa fa-trash" style="color:#d9534f; cursor:pointer;"></i>`; 
+                item.querySelector('i').onclick = async () => { if (confirm(`Delete "${x.name}"?`)) { await deleteDoc(doc(db, k, x._id)); await window.renderSimpleList(k); } }; 
+                div.appendChild(item); 
+            }); 
+        }
+
+        // --- USER MGMT ---
+        window.openUserList = async function(r){
+            activeRoleView=r; document.getElementById('userListTitle').innerText=r.toUpperCase();
+            document.getElementById('btnAddUser').style.display = (r==='student') ? 'none' : 'block'; 
+            if (r === 'student') { await window.renderClassListForUsers(); } else { await window.renderUserList(r); }
+            window.showPage('userListPage');
+        }
+        window.backToRoleSelect = function() { window.showPage('userRoleSelectionPage'); }
+        window.renderClassListForUsers = async function() {
+            const c = document.getElementById('userListContainer'); c.innerHTML = "";
+            const classes = await getCollectionData('classes');
+            classes.forEach(cls => {
+                const d = document.createElement('div'); d.className='list-item';
+                d.innerHTML = `<span>${cls.name}</span> <i class="fa fa-chevron-right"></i>`;
+                d.onclick = () => window.renderStudentList(cls.name);
+                c.appendChild(d);
+            });
+            const btn = document.getElementById('btnAddUser'); btn.style.display='block'; btn.onclick = () => window.openEditUserModal(null);
+        }
+        window.renderStudentList = async function(cls) {
+            document.getElementById('userListTitle').innerText = "Students - " + cls;
+            const c = document.getElementById('userListContainer'); c.innerHTML = "";
+            const allUsers = await getCollectionData('users');
+            let users = allUsers.filter(u => u.role === 'student' && u.cls === cls);
+            users.sort((a,b) => a.id.localeCompare(b.id, undefined, {numeric: true}));
+            
+            users.forEach(x => {
+                const d = document.createElement('div'); d.className='list-item';
+                // CHANGED: Removed Name, Added Edit/Delete Buttons
+                d.innerHTML = `
+                    <span>${x.id}</span> 
+                    <div>
+                        <i class="fa fa-pencil-alt" style="color:#337ab7; margin-right:15px; cursor:pointer;" onclick="event.stopPropagation(); window.openEditUserModal('${x.id}')"></i>
+                        <i class="fa fa-trash" style="color:#d9534f; cursor:pointer;" onclick="event.stopPropagation(); window.deleteUser('${x.id}')"></i>
+                    </div>
+                `;
+                d.onclick = () => window.openUserDetail(x); 
+                c.appendChild(d);
+            });
+        }
+        window.renderUserList = async function(r,f=""){
+            const c=document.getElementById('userListContainer');c.innerHTML="";
+            const allUsers = await getCollectionData('users');
+            let u=allUsers.filter(x=>x.role===r);
+            if(u.length>10||f!==""){const i=document.createElement('input');i.className="form-control";i.placeholder="Search...";i.value=f;i.onkeyup=(e)=>window.renderUserList(r,e.target.value);c.appendChild(i);if(f)u=u.filter(x=>x.id.toLowerCase().includes(f.toLowerCase()));}
+            u.forEach(x=>{
+                const d=document.createElement('div');d.className='list-item';let b="";
+                if(currentUser.role==='admin' && x.id!=='Admin123'){ b=`<span><i class="fa fa-pencil-alt" style="color:#337ab7;margin-right:10px; cursor:pointer;" onclick="event.stopPropagation();window.openEditUserModal('${x.id}')"></i><i class="fa fa-trash" style="color:#d9534f; cursor:pointer;" onclick="event.stopPropagation();window.deleteUser('${x.id}')"></i></span>`; } 
+                d.innerHTML=`<span>${x.id}</span>${b}`; d.onclick=()=>window.openUserDetail(x); c.appendChild(d);
+            });
+        }
+        window.deleteUser = async function(id){
+            if(confirm("Delete "+id+"?")){
+                const u = await getDocByField('users', 'id', id);
+                if(u) {
+                    await deleteDoc(doc(db, "users", u._id));
+                    if(activeRoleView === 'student') window.renderStudentList(u.cls);
+                    else window.renderUserList(activeRoleView);
+                }
+            }
+        }
+        
+        window.openEditUserModal = async function(id){
+            document.getElementById('editOriginalId').value=id||"";document.getElementById('editUserTitle').innerText=id?"Edit":"Add";const c=document.getElementById('editClassSelect');c.innerHTML="<option value=''>Class</option>";
+            const classes = await getCollectionData('classes');
+            classes.forEach(x=>c.innerHTML+=`<option value="${x.name}">${x.name}</option>`);
+            
+            document.getElementById('editStudentInputs').classList.toggle('hidden',activeRoleView!=='student');
+            document.getElementById('editFacultyInputs').classList.toggle('hidden',activeRoleView!=='faculty');
+            document.getElementById('editGeneralInputs').style.display = 'block'; 
+
+            document.getElementById('editUserId').value="";document.getElementById('editUserPass').value="";
+            document.getElementById('editStuName').value="";document.getElementById('editStuMob').value="";document.getElementById('editStuParMob').value="";
+            document.getElementById('editUserName').value=""; 
+            tempSubjects=[];
+            
+            if(id){
+                const u = await getDocByField('users', 'id', id);
+                document.getElementById('editUserId').value=u.id;document.getElementById('editUserPass').value=u.pass;
+                document.getElementById('editUserName').value = u.name || ""; 
+                
+                if(activeRoleView==='student'){
+                    c.value=u.cls;
+                    if(document.getElementById('editStuName')) document.getElementById('editStuName').value = u.name || "";
+                    document.getElementById('editGeneralInputs').style.display = 'none'; 
+                    document.getElementById('editStuMob').value = u.mobile || "";
+                    document.getElementById('editStuParMob').value = u.parentMobile || "";
+                }
+                if(activeRoleView==='faculty'){tempSubjects=u.subjects||[];window.renderEditSubTags();}
+            } else {
+                if(activeRoleView === 'student') document.getElementById('editGeneralInputs').style.display = 'none';
+            }
+            window.showPage('editUserPage');
+        }
+        window.saveUser = async function(){
+            const old=document.getElementById('editOriginalId').value;const nid=document.getElementById('editUserId').value;const p=document.getElementById('editUserPass').value;if(!nid||!p)return;
+            
+            if(old!==nid) {
+                const check = await getDocByField('users', 'id', nid);
+                if(check){window.showAlert("ID Exists");return;}
+            }
+            
+            let userData = { id: nid, pass: p, role: activeRoleView };
+            if (activeRoleView === 'student') {
+                userData.cls = document.getElementById('editClassSelect').value;
+                userData.name = document.getElementById('editStuName').value.toUpperCase();
+                userData.mobile = document.getElementById('editStuMob').value;
+                userData.parentMobile = document.getElementById('editStuParMob').value;
+            } else {
+                userData.name = document.getElementById('editUserName').value.toUpperCase();
+                if (activeRoleView === 'faculty') userData.subjects = tempSubjects;
+            }
+
+            if (old) {
+                const u = await getDocByField('users', 'id', old);
+                await updateDoc(doc(db, "users", u._id), userData);
+            } else {
+                await addDoc(collection(db, "users"), userData);
+            }
+            
+            window.backToUserList();
+            if(activeRoleView === 'student' && document.getElementById('editClassSelect').value) {
+                 window.renderStudentList(document.getElementById('editClassSelect').value);
+            } else {
+                 window.renderUserList(activeRoleView);
+            }
+        }
+        window.backToUserList = function(){window.showPage('userListPage');} 
+        window.renderEditSubTags = function(){const c=document.getElementById('editSubTags');c.innerHTML="";tempSubjects.forEach((s,i)=>{c.innerHTML+=`<div class="tag">${s} <i class="fa fa-times" onclick="tempSubjects.splice(${i},1);window.renderEditSubTags();"></i></div>`;});} 
+        window.filterEditSubjectSearch = async function(){
+            const t=document.getElementById('editSubSearch').value.toLowerCase();const r=document.getElementById('editSubResults');r.innerHTML="";if(t.length<1){r.style.display='none';return;}
+            const allSubs = await getCollectionData('subjects');
+            const m=allSubs.filter(s=>s.name.toLowerCase().includes(t)&&!tempSubjects.includes(s.name));
+            if(m.length>0){r.style.display='block';m.forEach(s=>{const d=document.createElement('div');d.className='list-item';d.innerText=s.name;d.onclick=()=>{tempSubjects.push(s.name);window.renderEditSubTags();document.getElementById('editSubSearch').value="";r.style.display='none';};r.appendChild(d);});}else r.style.display='none';
+        }
+
+        let currentDetailUser = null;
+        window.openUserDetail = function(u){
+            currentDetailUser = u;
+            document.getElementById('detailUserId').innerText=u.id;
+            document.getElementById('detailUserImg').src = u.image || "https://via.placeholder.com/80?text=User";
+            let infoHtml = "";
+            infoHtml += `<strong>Name:</strong> ${u.name || '-'}<br>`;
+            
+            if(u.role === 'student') {
+                infoHtml += `<strong>Class:</strong> ${u.cls}<br><strong>Mobile:</strong> ${u.mobile || '-'}<br><strong>Parent:</strong> ${u.parentMobile || '-'}<br>`;
+            } 
+            document.getElementById('detailExtraInfo').innerHTML = infoHtml;
+            
+            const imgInput = document.getElementById('adminUserImgInput');
+            if(currentUser.role === 'admin') {
+                document.getElementById('detailUserImg').style.cursor = 'pointer';
+                imgInput.disabled = false;
+            } else {
+                document.getElementById('detailUserImg').style.cursor = 'default';
+                imgInput.disabled = true;
+            }
+
+            const btnContainer = document.getElementById('detailButtons');
+            btnContainer.innerHTML = "";
+            
+            if(u.role === 'student') {
+                btnContainer.innerHTML += `<button class="btn btn-info" onclick="window.toggleStuAttDetails()">Attendance</button>`;
+            }
+            
+            if(currentUser.role === 'admin' && u.infoSubmitted) {
+                btnContainer.innerHTML += `<button class="btn btn-warning" onclick="window.resetUserProfileStatus()">Reset Profile Update</button>`;
+            }
+
+            document.getElementById('detailStatsContainer').innerHTML = ""; 
+            document.getElementById('detailStatsContainer').style.display = 'none';
+            window.showPage('userDetailStatsPage');
+        }
+
+        window.changeUserImageByAdmin = function() {
+            const f = document.getElementById('adminUserImgInput').files[0];
+            if(!f) return;
+            const r = new FileReader();
+            r.onloadend = async function() {
+                const imgData = r.result;
+                try {
+                    await updateDoc(doc(db, "users", currentDetailUser._id), { image: imgData });
+                    document.getElementById('detailUserImg').src = imgData;
+                    window.showToast("Image Updated");
+                } catch(e) {
+                    window.showAlert("Image too large");
+                }
+            };
+            r.readAsDataURL(f);
+        }
+
+        window.resetUserProfileStatus = async function() {
+            if(currentDetailUser && confirm("Reset profile update status?")) {
+                await updateDoc(doc(db, "users", currentDetailUser._id), { infoSubmitted: false });
+                currentDetailUser.infoSubmitted = false;
+                window.openUserDetail(currentDetailUser);
+                window.showToast("Reset Done"); 
+            }
+        }
+
+        window.toggleStuAttDetails = async function() {
+            const d = document.getElementById('detailStatsContainer');
+            if(d.style.display === 'block') { d.style.display = 'none'; return; }
+            d.innerHTML = "";
+            const u = currentDetailUser;
+            if(u.role==='student'){
+                const allSess = await getCollectionData('sessions');
+                const s = allSess.filter(x=>x.cls===u.cls);
+                
+                const allRecs = await getCollectionData('records');
+                const r = allRecs.filter(x=>x.enroll===u.id);
+
+                [...new Set(s.map(x=>x.sub))].forEach(sb=>{
+                    const t=s.filter(x=>x.sub===sb).length;
+                    const a=r.filter(x=>x.sub===sb).length;
+                    const p=t===0?0:Math.round((a/t)*100);
+                    d.innerHTML+=`<div><div style="display:flex;justify-content:space-between; margin-top:5px;"><span>${sb}</span><span>${a}/${t} (${p}%)</span></div><div style="background:#eee;height:6px;border-radius:3px;margin-top:2px;"><div style="background:#337ab7;height:100%;border-radius:3px;width:${p}%"></div></div></div>`;
+                });
+            } else { d.innerText = "No stats."; }
+            d.style.display = 'block';
+        }
+
+        // --- TIME TABLE ---
+        window.openResourcesPage = async function() { 
+            const s=document.getElementById('ttClassSelect'); s.innerHTML="<option value=''>Select Class</option>"; 
+            const classes = await getCollectionData('classes');
+            classes.forEach(c=>s.innerHTML+=`<option value="${c.name}">${c.name}</option>`); 
+            window.showPage('resourcesPage'); 
+            window.toggleTTInput(); 
+        } 
+        window.toggleTTInput = function() {
+            const type = document.querySelector('input[name="ttType"]:checked').value;
+            if(type === 'img') {
+                document.getElementById('ttInputImg').classList.remove('hidden');
+                document.getElementById('ttInputHtml').classList.add('hidden');
+            } else {
+                document.getElementById('ttInputImg').classList.add('hidden');
+                document.getElementById('ttInputHtml').classList.remove('hidden');
+            }
+        }
+        window.uploadTimeTable = function() { 
+            const c=document.getElementById('ttClassSelect').value; 
+            const type = document.querySelector('input[name="ttType"]:checked').value;
+            if(!c) { window.showAlert("Select a class"); return; }
+
+            if (type === 'img') {
+                const f=document.getElementById('ttFileInput').files[0]; 
+                if(!f) { window.showAlert("Select image"); return; }
+                const r=new FileReader(); 
+                r.onloadend=function(){ window.saveTTData(c, 'img', r.result); }; 
+                r.readAsDataURL(f); 
+            } else {
+                const html = document.getElementById('ttHtmlInput').value;
+                if(!html) { window.showAlert("Enter HTML"); return; }
+                window.saveTTData(c, 'html', html);
+            }
+        } 
+        window.saveTTData = async function(cls, type, content) {
+            // Check if exists
+            const existing = await getDocByField('timetable', 'cls', cls);
+            if(existing) {
+                await updateDoc(doc(db, "timetable", existing._id), { type: type, content: content });
+            } else {
+                await addDoc(collection(db, 'timetable'), { cls: cls, type: type, content: content });
+            }
+            window.showAlert("Time Table Saved");
+        }
+        window.viewTimeTable = async function() { 
+            const d = await getDocByField('timetable', 'cls', currentUser.cls);
+            const disp = document.getElementById('ttDisplayArea');
+            disp.innerHTML = "";
+
+            if(d) {
+                if(d.type === 'html') {
+                    disp.innerHTML = d.content;
+                } else {
+                    const img = document.createElement('img');
+                    img.src = d.content || d.img; 
+                    img.style.width = '100%';
+                    disp.appendChild(img);
+                }
+            } else {
+                disp.innerText = "No Time Table Available";
+            }
+            document.getElementById('ttModal').style.display='flex'; 
+        }
+    </script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
+    import { getFirestore, collection, addDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAmVgNOXxSAVBAPgHieBiiGvza5AacMqnE",
+      authDomain: "utu-e-attandence.firebaseapp.com",
+      projectId: "utu-e-attandence",
+      storageBucket: "utu-e-attandence.firebasestorage.app",
+      messagingSenderId: "1069229220014",
+      appId: "1:1069229220014:web:1f38894de299d9513d4d3f",
+      measurementId: "G-7YJWCC1HLE"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getFirestore(app);
+
+    window.getDocByField = async function(collectionName) {
+      const q = query(collection(db, collectionName));
+      const querySnapshot = await getDocs(q);
+      let data = null;
+      querySnapshot.forEach((doc) => {
+        data = doc.data();
+      });
+      return data;
+    };
+
+    window.viewTimetable = async function() {
+      const d = await getDocByField('timetable');
+      const disp = document.getElementById('ttDisp');
+      if (!disp) return;
+      disp.innerHTML = "";
+
+      if (d) {
+        if (d.type === 'html') {
+          disp.innerHTML = d.content;
+        } else {
+          const img = document.createElement('img');
+          img.src = d.content || d.img;
+          img.style.width = '100%';
+          disp.appendChild(img);
+        }
+      } else {
+        disp.innerText = "No Time Table Available";
+      }
+      const modal = document.getElementById('ttModal');
+      if (modal) modal.style.display = "block";
+    };
+  </script>
+
+</body>
+</html>
+
+</body>
+</html>
